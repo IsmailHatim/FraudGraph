@@ -48,7 +48,7 @@ pip install -r requirements.txt
 ```
 
 ### 4. Download data
-You can download the original data on the following kaggle challenge : [IEEE-CIS Fraud Dataset (Kaggle)](https://kaggle.com/competitions/ieee-fraud-detection)
+You can download the original data on the following kaggle challenge : [Elliptic Dataset (2019)](https://www.kaggle.com/datasets/ellipticco/elliptic-data-set)
 
 ### 5. Preprocess data
 ```bash
