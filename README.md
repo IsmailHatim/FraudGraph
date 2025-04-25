@@ -65,7 +65,6 @@ Other options:
 ```bash
 python models/train_gat.py --epochs 200 --heads 8 --lr 0.005 --save
 python models/train_graphsage.py --epochs 200 --lr 0.005 --save
-python models/train_hetgnn.py 
 ```
 
 ### 7. Evaluate and visualize
