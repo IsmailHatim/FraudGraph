@@ -26,6 +26,7 @@ from utils.config import ROOT, CHECKPOINT_DIR
 from utils.data_loader import load_elliptic_data
 from models.gcn import GCN
 from models.gat import GAT
+from models.graphsage import GraphSAGE
 
 # ─── where plots will be written ────────────────────────────────────────────
 PLOT_DIR = (ROOT / "evaluation" / "plots").resolve()
@@ -40,6 +41,10 @@ MODEL_REGISTRY = {
     "gat": {
         "class": GAT,
         "default_ckpt": CHECKPOINT_DIR / "gat_elliptic.pt",
+    },
+    "graphsage": {
+        "class": GraphSAGE,
+        "default_ckpt": CHECKPOINT_DIR / "graphsage_elliptic.pt",
     },
 }
 
