@@ -1,114 +1,99 @@
-import pandas as pd
-import numpy as np
+"""Train a GCN on the Elliptic dataset."""
+import argparse
+from pathlib import Path
+import sys, pathlib
 
 import torch
-from torch_geometric.data import Data
-from torch_geometric.nn import GCNConv
-
 import torch.nn.functional as F
-
+from torch.optim import Adam
 from sklearn.metrics import classification_report
 
+ROOT = pathlib.Path(__file__).resolve().parents[1]   # …/FraudGraph
+if ROOT.as_posix() not in sys.path:                  
+    sys.path.append(ROOT.as_posix())
 
-features_df = pd.read_csv('./data/elliptic_txs_features.csv', header=None)
-
-tx_ids = features_df.iloc[:, 0].values  
-timestamps = features_df.iloc[:, 1].values  
-features = features_df.iloc[:, 2:].values  
-
-tx_id_to_idx = {tx_id: idx for idx, tx_id in enumerate(tx_ids)}
-
-x = torch.tensor(features, dtype=torch.float)
-
-classes_df = pd.read_csv('./data/elliptic_txs_classes.csv')
-label_map = {1: 1, 2: 0}  
-labels = np.full(len(tx_ids), -1)  
-for _, row in classes_df.iterrows():
-    label = row['class']
-    if label in ['1', '2']: 
-        idx = tx_id_to_idx.get(row['txId'])
-        if idx is not None:
-            labels[idx] = label_map[int(label)]
-
-y = torch.tensor(labels, dtype=torch.long)
-
-edges_df = pd.read_csv('./data/elliptic_txs_edgelist.csv')
-edge_index = []
-for _, row in edges_df.iterrows():
-    src = tx_id_to_idx.get(row['txId1'])
-    dst = tx_id_to_idx.get(row['txId2'])
-    if src is not None and dst is not None:
-        edge_index.append([src, dst])
-edge_index = torch.tensor(edge_index, dtype=torch.long).t().contiguous()
-
-data = Data(x=x, edge_index=edge_index, y=y)    
+from utils.data_loader import load_elliptic_data
+from models.gcn import GCN
+from utils.config import CHECKPOINT_DIR
 
 
-class GCN(torch.nn.Module):
-    
-    def __init__(self, in_channels, hidden_channels, out_channels):
-        super().__init__()
-        
-        self.conv1 = GCNConv(in_channels, hidden_channels)
-        self.conv2 = GCNConv(hidden_channels, out_channels)
 
-    def forward(self, x, edge_index):
-    
-        x = self.conv1(x, edge_index)
-        x = F.relu(x)
-        x = self.conv2(x, edge_index)
+def train(data, hidden_channels=64, lr=0.01, weight_decay=5e-4, epochs=700, patience=20):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = GCN(in_channels=data.x.size(1),
+                hidden_channels=hidden_channels,
+                out_channels=2).to(device)
+    data = data.to(device)
 
-        return x
-    
+    optimizer = Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+    best_loss, patience_ctr, best_state = float("inf"), 0, None
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-n_epochs = 700
-patience = 20
-best_loss = float('inf')
-epochs_no_improve = 0
+    for epoch in range(1, epochs + 1):
+        model.train()
+        optimizer.zero_grad()
+        out = model(data.x, data.edge_index)
+        loss = F.cross_entropy(out[data.train_mask], data.y[data.train_mask])
+        loss.backward()
+        optimizer.step()
 
-model = GCN(in_channels=data.x.size(1), hidden_channels=64, out_channels=2).to(device)
-data = data.to(device)
+        if epoch % 20 == 0 or epoch == 1:
+            pred = out.argmax(dim=1)
+            acc = (pred[data.train_mask] == data.y[data.train_mask]).float().mean().item()
+            print(f"Epoch {epoch:03d} | Loss {loss:.4f} | Acc {acc:.4f}")
 
-optimizer = torch.optim.Adam(model.parameters(), lr=0.01, weight_decay=5e-4)
+        # ---- early stopping ----------------------------------------------
+        if loss.item() < best_loss - 1e-4:
+            best_loss = loss.item()
+            best_state = model.state_dict()
+            patience_ctr = 0
+        else:
+            patience_ctr += 1
+            if patience_ctr >= patience:
+                print(f"Early stopping at epoch {epoch:03d}")
+                break
 
-train_mask = data.y != -1
+    model.load_state_dict(best_state)
+    return model
 
-for epoch in range(n_epochs):
-    
-    model.train()
-    optimizer.zero_grad()
-    out = model(data.x, data.edge_index)
 
-    loss = F.cross_entropy(out[train_mask], data.y[train_mask])
-    loss.backward()
-    optimizer.step()
-
+def evaluate(model, data):
+    model.eval()
+    with torch.no_grad():
+        out = model(data.x, data.edge_index)
     pred = out.argmax(dim=1)
-    correct = pred[train_mask] == data.y[train_mask]
-    acc = int(correct.sum()) / int(train_mask.sum())
-
-    if epoch % 20 == 0 or epoch == 1:   
-        print(f'Epoch {epoch:03d}, Loss: {loss:.4f}, Acc: {acc:.4f}')
-
-    if loss.item() < best_loss - 1e-4:
-        best_loss = loss.item()
-        epochs_no_improve = 0
-        best_model_state = model.state_dict()
-    else:
-        epochs_no_improve += 1
-        if epochs_no_improve >= patience:
-            print(f'Early Stopping triggered at epoch {epoch:03d}')
-            break
+    mask = data.y != -1
+    report = classification_report(data.y[mask].cpu(),
+                                   pred[mask].cpu(),
+                                   target_names=["Legit", "Fraud"])
+    print(report)
+    return report
 
 
-model.eval()
-with torch.no_grad():
-    out = model(data.x, data.edge_index)
-    pred = out.argmax(dim=1)
+def main():  # pragma: no cover
+    parser = argparse.ArgumentParser(description="Train a GCN on Elliptic")
+    parser.add_argument("--epochs", type=int, default=700)
+    parser.add_argument("--lr", type=float, default=0.01)
+    parser.add_argument("--hidden_channels", type=int, default=64)
+    parser.add_argument("--save", action="store_true", help="Persist best model to disk")
+    args = parser.parse_args()
 
-mask = data.y != -1
-y_true = data.y[mask].cpu().numpy()
-y_pred = pred[mask].cpu().numpy()
+    data = load_elliptic_data()
+    print("label counts:",
+      (data.y == 1).sum().item(),   # fraud
+      (data.y == 0).sum().item(),   # legit
+      (data.y == -1).sum().item())  # unknown
+    print("train_mask has", data.train_mask.sum().item(), "nodes")
+    model = train(data,
+                  hidden_channels=args.hidden_channels,
+                  lr=args.lr,
+                  epochs=args.epochs)
+    evaluate(model, data)
 
-print(classification_report(y_true, y_pred, target_names=['Legit', 'Fraud']))
+    if args.save:
+        ckpt_path = (CHECKPOINT_DIR / "gcn_elliptic.pt").as_posix()
+        torch.save(model.state_dict(), ckpt_path)
+        print(f"Model saved to {ckpt_path}")
+
+
+if __name__ == "__main__":
+    main()
