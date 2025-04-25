@@ -2,20 +2,21 @@
 
 > Detecting Financial Fraud Using Graph Neural Networks
 
-This repository contains the code, data processing scripts, and models to support our project on financial fraud detection using graph neural networks (GNNs). The project compares several GNN architectures across public datasets such as **Elliptic** and **IEEE-CIS Fraud Detection**.
+This repository contains the code, data processing scripts, and models to support our project on financial fraud detection using graph neural networks (GNNs). The project compares several GNN architectures across public dataset **Elliptic**.
 
 ## Project Structure
 
 ```bash
 fraudgraph/
+├── checkpoints/
+│   ├── gcn_elliptic.pt
+│   ├── gat_elliptic.pt
+│   └── graphsage_elliptic.pt
 ├── data/
 │   ├── elliptic_txs_classes.csv
 │   ├── elliptic_txs_edgelist.csv
 │   ├── elliptic_txs_features.csv
 │   └── processed/
-├── graphs/
-│   ├── elliptic_graph.pkl
-│   └── ieee_graph.pkl
 ├── models/
 │   ├── train_gcn.py
 │   ├── train_gat.py
@@ -23,7 +24,6 @@ fraudgraph/
 │   └── train_hetgnn.py
 ├── evaluation/
 │   ├── eval_metrics.py
-│   ├── explainability.py
 │   └── plots/
 ├── utils/
 │   ├── graph_utils.py
@@ -52,41 +52,37 @@ You can download the original data on the following kaggle challenge : [Elliptic
 
 ### 5. Preprocess data
 ```bash
-python utils/data_loader.py --dataset elliptic
-python utils/data_loader.py --dataset ieee
+python utils/data_loader.py
 ```
-This will save preprocessed graphs in the `graphs/` folder.
+This will preprocesse data and return a Dataframe.
 
 ### 6. Train a model
-You can train any of the GNN models using the provided scripts. For example, to train a GCN on the Elliptic dataset:
+You can train any of the GNN models using the provided scripts. For example, to train a GCN and save a checkpoint in the `/checkpoints` folder.
 ```bash
-python models/train_gcn.py --dataset elliptic --epochs 100 --lr 0.01
+python models/train_gcn.py --epochs 200 --lr 0.005 --save
 ```
 Other options:
 ```bash
-python models/train_gat.py --dataset ieee --epochs 50 --lr 0.005
-python models/train_graphsage.py --dataset elliptic
-python models/train_hetgnn.py --dataset ieee
+python models/train_gat.py --epochs 200 --heads 8 --lr 0.005 --save
+python models/train_graphsage.py --epochs 200 --lr 0.005 --save
+python models/train_hetgnn.py 
 ```
 
 ### 7. Evaluate and visualize
 To run evaluation and generate visual insights:
 ```bash
-python evaluation/eval_metrics.py --model gcn --dataset elliptic
-python evaluation/explainability.py --model gat --dataset ieee
+python evaluation/eval_metrics.py --model gcn
 ```
-Visualizations and graphs will be saved in the `evaluation/plots/` folder.
+Visualizations and graphs will be saved in the `evaluation/plots/` folder. You will first need to train the model to be able to load the last checkpoint.
 
 ## Features
 - Graph construction from tabular financial datasets
 - Node classification, edge classification, and link prediction
 - GCN, GAT, GraphSAGE, and HetGNN implementations
 - ROC-AUC, PR-AUC, F1, Recall, and precision-based evaluation
-- Graph explainability using attention weights and subgraph tracing
 
 ## References
 - [Elliptic Dataset (2019)](https://www.elliptic.co)
-- [IEEE-CIS Fraud Dataset (Kaggle)](https://kaggle.com/competitions/ieee-fraud-detection)
 
 ## Authors
 - Ismail Hatim  
